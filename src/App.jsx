@@ -13,6 +13,8 @@ import Categories from './pages/Categories';
 import Orders from './pages/Orders';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
+import Payments from './pages/Payments';
+import Sliders from './pages/Sliders';
 
 function App() {
   return (
@@ -69,6 +71,26 @@ function App() {
                   <ProtectedRoute>
                     <DashboardLayout>
                       <Users />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/payments"
+                element={
+                  <ProtectedRoute>
+                    <DashboardLayout>
+                      <Payments />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sliders"
+                element={
+                  <ProtectedRoute>
+                    <DashboardLayout>
+                      <Sliders />
                     </DashboardLayout>
                   </ProtectedRoute>
                 }

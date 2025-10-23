@@ -24,6 +24,8 @@ import {
   ShoppingCart as ShoppingCartIcon,
   People as PeopleIcon,
   ExitToApp as ExitToAppIcon,
+  Payment as PaymentIcon,
+  Collections as CollectionsIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -80,6 +82,8 @@ const menuItems = [
   { text: 'Products', icon: <InventoryIcon />, path: '/products' },
   { text: 'Orders', icon: <ShoppingCartIcon />, path: '/orders' },
   { text: 'Users', icon: <PeopleIcon />, path: '/users' },
+  { text: 'Payments', icon: <PaymentIcon />, path: '/payments' },
+  { text: 'Sliders', icon: <CollectionsIcon />, path: '/sliders' },
 ];
 
 const DashboardLayout = ({ children }) => {

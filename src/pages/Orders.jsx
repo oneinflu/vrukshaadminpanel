@@ -23,18 +23,18 @@ import {
   TableRow,
   Paper,
   CircularProgress,
-  Avatar,
+  Alert,
 } from '@mui/material';
 import { useSnackbar } from 'notistack';
 import orderService from '../services/orderService';
+import paymentService from '../services/paymentService';
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedOrder, setSelectedOrder] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [statusUpdateOpen, setStatusUpdateOpen] = useState(false);
-  const [newStatus, setNewStatus] = useState('');
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
   const { enqueueSnackbar } = useSnackbar();
 
   const fetchOrders = async () => {
@@ -55,43 +55,64 @@ const Orders = () => {
     fetchOrders();
   }, []);
 
-  const handleStatusUpdate = async () => {
+  const handleStatusChange = async (orderId, newStatus) => {
     try {
-      await orderService.updateOrderStatus(selectedOrder._id, newStatus);
+      setStatusUpdateLoading(true);
+      await orderService.updateOrderStatus(orderId, newStatus);
       enqueueSnackbar('Order status updated successfully', { variant: 'success' });
-      setStatusUpdateOpen(false);
       fetchOrders();
     } catch (error) {
-      enqueueSnackbar(error.message || 'Failed to update status', {
+      enqueueSnackbar(error.message || 'Failed to update order status', {
         variant: 'error',
       });
+    } finally {
+      setStatusUpdateLoading(false);
     }
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
   };
 
   const getStatusColor = (status) => {
     const colors = {
-      'Order Placed': '#FFA000',
-      'Processing': '#1976D2',
-      'Shipped': '#2E7D32',
-      'Delivered': '#388E3C',
-      'Cancelled': '#D32F2F',
-      'Scheduled': '#9C27B0',
+      'Pending': '#f57c00',
+      'Processing': '#1976d2',
+      'Shipped': '#7b1fa2',
+      'Delivered': '#2e7d32',
+      'Cancelled': '#d32f2f',
     };
     return colors[status] || '#757575';
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  const handlePaymentReceived = async (orderId) => {
+    try {
+      await paymentService.recordCODPayment(orderId);
+      enqueueSnackbar('Payment recorded successfully', { variant: 'success' });
+      fetchOrders(); // Refresh orders list
+      setDetailsOpen(false); // Close the dialog
+    } catch (error) {
+      console.error('Payment recording error:', {
+        orderId,
+        error: error.response?.data || error.message,
+        status: error.response?.status,
+        headers: error.response?.headers
+      });
+      const errorMessage = error.response?.status === 403
+        ? 'Not authorized to record payments. Please check your admin privileges.'
+        : error.response?.data?.message || error.message || 'Failed to record payment';
+      enqueueSnackbar(errorMessage, { variant: 'error' });
+    }
   };
 
   const OrderDetails = () => {
     if (!selectedOrder) return null;
+
+    const showPaymentButton = selectedOrder.paymentMode === 'COD' && selectedOrder.status !== 'Cancelled';
 
     return (
       <Dialog open={detailsOpen} onClose={() => setDetailsOpen(false)} maxWidth="md" fullWidth>
@@ -118,6 +139,16 @@ const Orders = () => {
                   <Typography>Payment Mode: {selectedOrder.paymentMode}</Typography>
                   {selectedOrder.isRecurring && (
                     <Typography>Recurring Order: Yes</Typography>
+                  )}
+                  {showPaymentButton && (
+                    <Button
+                      variant="contained"
+                      color="success"
+                      sx={{ mt: 2 }}
+                      onClick={() => handlePaymentReceived(selectedOrder._id)}
+                    >
+                      Record Payment Received
+                    </Button>
                   )}
                 </CardContent>
               </Card>
@@ -151,42 +182,31 @@ const Orders = () => {
                       <TableHead>
                         <TableRow>
                           <TableCell>Product</TableCell>
-                          <TableCell>Weight</TableCell>
-                          <TableCell>Price</TableCell>
                           <TableCell>Quantity</TableCell>
-                          <TableCell align="right">Total</TableCell>
+                          <TableCell>Price</TableCell>
+                          <TableCell>Total</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {selectedOrder.items?.map((item, index) => (
-                          <TableRow key={index}>
+                        {selectedOrder.items?.map((item) => (
+                          <TableRow key={item._id}>
                             <TableCell>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Avatar
-                                  src={item.product?.images?.[0]}
-                                  alt={item.product?.name}
-                                  variant="rounded"
-                                  sx={{ width: 40, height: 40 }}
-                                />
+                              <Box display="flex" alignItems="center">
+                                {item.product?.image && (
+                                  <img
+                                    src={item.product.image}
+                                    alt={item.product.name}
+                                    style={{ width: 50, height: 50, marginRight: 10 }}
+                                  />
+                                )}
                                 {item.product?.name}
                               </Box>
                             </TableCell>
-                            <TableCell>{item.variation?.weight}</TableCell>
-                            <TableCell>₹{item.variation?.price}</TableCell>
                             <TableCell>{item.quantity}</TableCell>
-                            <TableCell align="right">
-                              ₹{(item.variation?.price * item.quantity) || 0}
-                            </TableCell>
+                            <TableCell>₹{item.price}</TableCell>
+                            <TableCell>₹{item.quantity * item.price}</TableCell>
                           </TableRow>
                         ))}
-                        <TableRow>
-                          <TableCell colSpan={4} align="right">
-                            <strong>Total Amount:</strong>
-                          </TableCell>
-                          <TableCell align="right">
-                            <strong>₹{selectedOrder.total}</strong>
-                          </TableCell>
-                        </TableRow>
                       </TableBody>
                     </Table>
                   </TableContainer>
@@ -196,92 +216,59 @@ const Orders = () => {
           </Grid>
         </DialogContent>
         <DialogActions>
+          <FormControl sx={{ minWidth: 200, mr: 2 }}>
+            <InputLabel>Update Status</InputLabel>
+            <Select
+              value=""
+              label="Update Status"
+              onChange={(e) => handleStatusChange(selectedOrder._id, e.target.value)}
+              disabled={statusUpdateLoading}
+            >
+              <MenuItem value="Pending">Pending</MenuItem>
+              <MenuItem value="Processing">Processing</MenuItem>
+              <MenuItem value="Shipped">Shipped</MenuItem>
+              <MenuItem value="Delivered">Delivered</MenuItem>
+              <MenuItem value="Cancelled">Cancelled</MenuItem>
+            </Select>
+          </FormControl>
           <Button onClick={() => setDetailsOpen(false)}>Close</Button>
-          <Button
-            onClick={() => {
-              setDetailsOpen(false);
-              setStatusUpdateOpen(true);
-            }}
-            variant="contained"
-            color="primary"
-          >
-            Update Status
-          </Button>
         </DialogActions>
       </Dialog>
     );
   };
 
-  const StatusUpdateDialog = () => (
-    <Dialog open={statusUpdateOpen} onClose={() => setStatusUpdateOpen(false)}>
-      <DialogTitle>Update Order Status</DialogTitle>
-      <DialogContent>
-        <FormControl fullWidth sx={{ mt: 2 }}>
-          <InputLabel>Status</InputLabel>
-          <Select
-            value={newStatus}
-            label="Status"
-            onChange={(e) => setNewStatus(e.target.value)}
-          >
-            <MenuItem value="Order Placed">Order Placed</MenuItem>
-            <MenuItem value="Processing">Processing</MenuItem>
-            <MenuItem value="Shipped">Shipped</MenuItem>
-            <MenuItem value="Delivered">Delivered</MenuItem>
-            <MenuItem value="Cancelled">Cancelled</MenuItem>
-          </Select>
-        </FormControl>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={() => setStatusUpdateOpen(false)}>Cancel</Button>
-        <Button onClick={handleStatusUpdate} variant="contained" color="primary">
-          Update
-        </Button>
-      </DialogActions>
-    </Dialog>
-  );
-
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
         <CircularProgress />
       </Box>
     );
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>Orders Management</Typography>
-      
+    <Box p={3}>
+      <Typography variant="h5" gutterBottom>
+        Orders
+      </Typography>
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
               <TableCell>Order ID</TableCell>
               <TableCell>Customer</TableCell>
-              <TableCell>Items</TableCell>
+              <TableCell>Date</TableCell>
               <TableCell>Total</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell>Date</TableCell>
-              <TableCell align="right">Actions</TableCell>
+              <TableCell>Payment</TableCell>
+              <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {orders.map((order) => (
               <TableRow key={order._id}>
-                <TableCell>{order._id.slice(-6)}</TableCell>
-                <TableCell>
-                  <Typography>{order.user?.name}</Typography>
-                  <Typography variant="caption" color="textSecondary">
-                    {order.user?.phone}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  {order.items?.map((item, index) => (
-                    <Typography key={index} variant="body2">
-                      {item.quantity}x {item.product?.name} ({item.variation?.weight})
-                    </Typography>
-                  ))}
-                </TableCell>
+                <TableCell>{order._id}</TableCell>
+                <TableCell>{order.user?.name}</TableCell>
+                <TableCell>{formatDate(order.createdAt)}</TableCell>
                 <TableCell>₹{order.total}</TableCell>
                 <TableCell>
                   <Chip
@@ -292,8 +279,8 @@ const Orders = () => {
                     }}
                   />
                 </TableCell>
-                <TableCell>{formatDate(order.createdAt)}</TableCell>
-                <TableCell align="right">
+                <TableCell>{order.paymentMode}</TableCell>
+                <TableCell>
                   <Button
                     variant="outlined"
                     size="small"
@@ -310,9 +297,7 @@ const Orders = () => {
           </TableBody>
         </Table>
       </TableContainer>
-
       <OrderDetails />
-      <StatusUpdateDialog />
     </Box>
   );
 };
